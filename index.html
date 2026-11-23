@@ -1,0 +1,815 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1b6d3a">
+<meta name="description" content="WealthOS: private, encrypted personal finance tracker. Your data stays on your device.">
+<meta name="application-name" content="WealthOS">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="WealthOS">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>WealthOS</title>
+<style>
+:root{--bg:#f6f8f6;--card:#fff;--fg:#1b2a1f;--muted:#5b6b60;--pri:#1b6d3a;--err:#b3261e;--ok:#2e7d32;--line:#dfe6e1}
+@media (prefers-color-scheme:dark){:root{--bg:#101512;--card:#1a221d;--fg:#e6efe8;--muted:#9fb3a5;--pri:#7ed9a0;--err:#ff8a80;--ok:#81c784;--line:#2a352e}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--fg);padding:env(safe-area-inset-top,0) 0 96px}
+header{padding:14px 16px 4px;font-weight:700;font-size:18px;max-width:720px;margin:auto}
+main{padding:0 14px 20px;max-width:720px;margin:auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0}
+.big{font-size:28px;font-weight:700}
+.muted{color:var(--muted);font-size:13px}
+.row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.row:last-child{border-bottom:0}
+.grow{flex:1;min-width:0}
+.pos{color:var(--ok)}.neg{color:var(--err)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.bar{height:10px;background:var(--line);border-radius:6px;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--pri)}
+.bar.over>i{background:var(--err)}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0)}
+nav button{flex:1;min-height:60px;padding:6px 2px;border:0;background:none;color:var(--muted);font-size:11px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;touch-action:manipulation}
+.ic{font-size:22px;line-height:1}
+nav button.on{color:var(--pri);font-weight:700}
+.btn{background:var(--pri);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-size:14px;cursor:pointer}
+.ghost{background:none;color:var(--pri);border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer;font-size:14px;margin-top:6px}
+.danger{background:none;color:var(--err);border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer;font-size:14px;margin-top:6px}
+h3{margin:18px 4px 6px;font-size:15px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;z-index:9}
+.sheet{background:var(--card);color:var(--fg);width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:18px;max-height:90vh;overflow:auto}
+label{display:block;font-size:12px;color:var(--muted);margin-top:10px}
+input,select{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);font-size:16px;margin-top:4px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.chip{padding:6px 10px;border-radius:14px;border:1px solid var(--line);font-size:13px;cursor:pointer;background:var(--bg);color:var(--fg)}
+.chip.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+.actions{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:16px}
+svg{width:100%;height:auto;display:block}
+hr{border:0;border-top:1px solid var(--line);margin:14px 0}
+.fab{position:fixed;right:16px;bottom:92px;width:56px;height:56px;border-radius:28px;font-size:28px;padding:0;line-height:56px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+body[data-locked] nav,body[data-locked] .fab{display:none}
+</style>
+</head>
+<body data-locked="1">
+<header>WealthOS</header>
+<main id="main"></main>
+<div id="modal"></div>
+<button class="btn fab" onclick="txForm()" aria-label="Add transaction">+</button>
+<nav>
+  <button data-t="home" onclick="go('home')"><span class="ic">🏠</span>Home</button>
+  <button data-t="activity" onclick="go('activity')"><span class="ic">🧾</span>Activity</button>
+  <button data-t="assets" onclick="go('assets')"><span class="ic">📈</span>Assets</button>
+  <button data-t="liabilities" onclick="go('liabilities')"><span class="ic">💳</span>Liabilities</button>
+  <button data-t="budgets" onclick="go('budgets')"><span class="ic">🎯</span>Budgets</button>
+  <button data-t="tools" onclick="go('tools')"><span class="ic">⚙️</span>Tools</button>
+</nav>
+
+<script>
+// ============================================================ constants
+const LEGACY_KEY='wealthos.web.v1';
+const CUR=['INR','USD','EUR','GBP','AED','SGD','JPY','AUD','CAD'];
+const EXP=['Food','Groceries','Rent','Utilities','Transport','Shopping','Health','Education','Entertainment','EMI / Loans','Insurance','Other'];
+const INC=['Salary','Business','Interest','Dividends','Rental','Gift','Other'];
+// [label, isLiability]
+const KINDS={BANK:['Bank account',0],WALLET:['Wallet / UPI',0],CASH:['Cash',0],PROPERTY:['Property',0],GOLD:['Gold / Silver',0],CREDIT_CARD:['Credit card',1],LOAN:['Loan',1]};
+const HTYPES={MUTUAL_FUND:'Mutual fund',STOCK:'Stock',FD:'Fixed deposit',PPF:'PPF / EPF / NPS',GOLD:'Gold ETF / SGB',CRYPTO:'Crypto',OTHER:'Other'};
+const LIST={tx:'tx',acc:'accounts',hold:'holdings',goal:'goals',budget:'budgets',rec:'recurring'};
+const DAY=864e5;
+const PBKDF2_ITER=250000;
+
+// ============================================================ state
+let S=null;          // decrypted data of the open profile (null when locked)
+let KEY=null;        // AES-GCM key of the open profile (in memory only)
+let PROFILE=null;    // {id,name,salt} of the open profile
+let tab='home';
+let lockView='login';
+let chain=Promise.resolve();
+
+// ============================================================ storage and crypto
+const profiles=()=>JSON.parse(localStorage.getItem('wos.profiles')||'[]');
+const saveProfiles=l=>localStorage.setItem('wos.profiles',JSON.stringify(l));
+const enc=new TextEncoder(),dec=new TextDecoder();
+
+function b64(buf){const u=new Uint8Array(buf);let s='';for(let i=0;i<u.length;i++)s+=String.fromCharCode(u[i]);return btoa(s)}
+const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+
+async function deriveKey(pass,salt){
+  const base=await crypto.subtle.importKey('raw',enc.encode(pass),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:PBKDF2_ITER,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+}
+async function encrypt(key,text){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,enc.encode(text));
+  return {iv:b64(iv),ct:b64(ct)};
+}
+async function decrypt(key,box){
+  const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(box.iv)},key,unb64(box.ct));
+  return dec.decode(pt);
+}
+
+// Writes are queued so quick successive edits are saved in order.
+function save(){
+  if(!KEY||!PROFILE)return;
+  const str=JSON.stringify(S),key=KEY,id=PROFILE.id;
+  chain=chain.then(()=>encrypt(key,str))
+    .then(box=>localStorage.setItem('wos.data.'+id,JSON.stringify(box)))
+    .catch(()=>alert('Could not save your data. Check available browser storage.'));
+}
+
+// ============================================================ formatting and helpers
+function fmt(a,code=S?.base||'INR',compact=false){
+  const sign=a<0?'-':'';a=Math.abs(a);
+  if(code==='INR'){
+    if(compact&&a>=1e7)return sign+'₹'+(a/1e7).toFixed(2)+' Cr';
+    if(compact&&a>=1e5)return sign+'₹'+(a/1e5).toFixed(2)+' L';
+    return sign+new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(a);
+  }
+  if(compact&&a>=1e6)return sign+(a/1e6).toFixed(2)+'M '+code;
+  return sign+new Intl.NumberFormat('en-US',{style:'currency',currency:code,maximumFractionDigits:0}).format(a);
+}
+const rate=c=>c===S.base?1:(S.rates[c]||1);
+const toBase=(a,c)=>a*rate(c);
+const accOf=id=>S.accounts.find(a=>a.id===id);
+const ymOf=t=>{const d=new Date(t);return d.getFullYear()*100+d.getMonth()+1};
+const idx=ym=>Math.floor(ym/100)*12+(ym%100-1);
+const idxYm=i=>Math.floor(i/12)*100+(i%12)+1;
+const nowIdx=()=>{const d=new Date();return d.getFullYear()*12+d.getMonth()};
+const ymLabel=ym=>new Date(Math.floor(ym/100),ym%100-1,1).toLocaleString('en',{month:'short',year:'numeric'});
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const val=id=>{const e=document.getElementById(id);return e?e.value:''};
+const sumType=(arr,type)=>arr.filter(t=>t.type===type).reduce((s,t)=>s+t.amount,0);
+const setText=(id,h)=>{const e=document.getElementById(id);if(e)e.textContent=h};
+
+function emptyData(){return {base:'INR',rates:{},nextId:100,accounts:[],tx:[],budgets:[],holdings:[],goals:[],recurring:[]}}
+function seedData(){
+  const now=Date.now(),d=emptyData();
+  d.accounts=[
+    {id:1,name:'HDFC Savings',kind:'BANK',balance:185000,currency:'INR'},
+    {id:2,name:'UPI wallet',kind:'WALLET',balance:4200,currency:'INR'},
+    {id:3,name:'Credit card',kind:'CREDIT_CARD',balance:12500,currency:'INR'},
+    {id:4,name:'Home loan',kind:'LOAN',balance:2400000,currency:'INR'}];
+  d.tx=[
+    {id:1,acc:1,type:'INCOME',cat:'Salary',amount:95000,note:'Monthly salary',date:now-20*DAY},
+    {id:2,acc:1,type:'EXPENSE',cat:'Rent',amount:18000,note:'',date:now-15*DAY},
+    {id:3,acc:2,type:'EXPENSE',cat:'Groceries',amount:6400,note:'',date:now-10*DAY},
+    {id:4,acc:3,type:'EXPENSE',cat:'Shopping',amount:4800,note:'Online order',date:now-5*DAY}];
+  d.budgets=[{id:1,cat:'Food',limit:8000},{id:2,cat:'Shopping',limit:5000}];
+  d.holdings=[{id:1,name:'Flexi-cap mutual fund',type:'MUTUAL_FUND',invested:300000,value:352000,sip:10000}];
+  d.goals=[{id:1,name:'Emergency fund',target:600000,saved:240000,deadline:now+365*DAY}];
+  d.recurring=[{id:1,name:'Streaming subscription',acc:3,type:'EXPENSE',cat:'Entertainment',amount:649,day:5,holding:0,lastRun:0,active:true,endYm:0}];
+  d.nextId=100;
+  return d;
+}
+
+// Applies (or reverses) a transaction on its account. Liabilities store the amount owed.
+function applyTx(t,rev){
+  const a=accOf(t.acc);if(!a)return;
+  let d=(t.type==='INCOME'?1:-1)*(KINDS[a.kind][1]?-1:1)*t.amount;
+  if(rev)d=-d;
+  a.balance+=d;
+}
+const nid=()=>S.nextId++;
+
+function summary(){
+  const assets=S.accounts.filter(a=>!KINDS[a.kind][1]).reduce((s,a)=>s+toBase(a.balance,a.currency),0)+S.holdings.reduce((s,h)=>s+h.value,0);
+  const liab=S.accounts.filter(a=>KINDS[a.kind][1]).reduce((s,a)=>s+toBase(a.balance,a.currency),0);
+  const start=new Date();start.setDate(1);start.setHours(0,0,0,0);
+  const m=S.tx.filter(t=>t.date>=start.getTime()).map(t=>({...t,amount:toBase(t.amount,accOf(t.acc)?.currency||S.base)}));
+  const exp=m.filter(t=>t.type==='EXPENSE');
+  const byCat={};exp.forEach(t=>byCat[t.cat]=(byCat[t.cat]||0)+t.amount);
+  const inc=sumType(m,'INCOME'),ex=sumType(m,'EXPENSE');
+  const liquid=S.accounts.filter(a=>['BANK','WALLET','CASH'].includes(a.kind)).reduce((s,a)=>s+toBase(a.balance,a.currency),0);
+  return {net:assets-liab,assets,liab,inc,ex,rate:inc>0?(inc-ex)/inc*100:0,byCat,liquid};
+}
+function wellness(s){
+  const months=s.ex>0?s.liquid/s.ex:6;
+  return Math.round(Math.min(Math.max(s.rate,0)/30,1)*40+Math.min(months/6,1)*30+(1-Math.min((s.assets>0?s.liab/s.assets:1)/.5,1))*30);
+}
+
+function trend(){
+  const now=new Date(),months=[];
+  for(let b=5;b>=0;b--){
+    const d=new Date(now.getFullYear(),now.getMonth()-b,1),ym=d.getFullYear()*100+d.getMonth()+1;
+    const inM=S.tx.filter(t=>ymOf(t.date)===ym).map(t=>({...t,amount:toBase(t.amount,accOf(t.acc)?.currency||S.base)}));
+    months.push({l:d.toLocaleString('en',{month:'short'}),inc:sumType(inM,'INCOME'),ex:sumType(inM,'EXPENSE')});
+  }
+  const net=new Array(6);net[5]=summary().net;
+  for(let i=4;i>=0;i--)net[i]=net[i+1]-(months[i+1].inc-months[i+1].ex);
+  return {months,net};
+}
+
+// ============================================================ recurring rules
+function runRecurring(){
+  if(!S)return 0;
+  const now=new Date(),cur=nowIdx(),today=now.getDate();let n=0;
+  S.recurring.filter(r=>r.active).forEach(r=>{
+    let i=r.lastRun?Math.max(idx(r.lastRun)+1,cur-11):cur;
+    while(i<=cur){
+      const ym=idxYm(i);
+      if(r.endYm&&ym>r.endYm)break;
+      if(i===cur&&today<r.day)break;
+      const y=Math.floor(i/12),m=i%12;
+      const date=new Date(y,m,Math.min(r.day,new Date(y,m+1,0).getDate()),12).getTime();
+      if(r.holding){
+        const h=S.holdings.find(x=>x.id===r.holding);
+        S.tx.push({id:nid(),acc:r.acc,type:'EXPENSE',cat:'Investments',amount:r.amount,note:'SIP: '+r.name,date});
+        applyTx(S.tx[S.tx.length-1]);
+        if(h){h.invested+=r.amount;h.value+=r.amount}
+      }else{
+        S.tx.push({id:nid(),acc:r.acc,type:r.type,cat:r.cat,amount:r.amount,note:'Recurring: '+r.name,date});
+        applyTx(S.tx[S.tx.length-1]);
+      }
+      r.lastRun=ym;n++;i++;
+    }
+  });
+  if(n)save();
+  return n;
+}
+
+// ============================================================ charts
+function lineSvg(v){
+  const W=600,H=160,P=10,hi=Math.max(...v),lo=Math.min(...v),rg=hi-lo||1;
+  const pts=v.map((y,i)=>[P+i*(W-2*P)/(v.length-1),H-P-((y-lo)/rg)*(H-2*P)]);
+  return `<svg viewBox="0 0 ${W} ${H}"><polyline fill="none" stroke="var(--pri)" stroke-width="4" points="${pts.map(p=>p.join(',')).join(' ')}"/>${pts.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="5" fill="var(--pri)"/>`).join('')}</svg>`;
+}
+function barSvg(months){
+  const W=600,H=160,peak=Math.max(1,...months.flatMap(m=>[m.inc,m.ex]));
+  const slot=W/months.length;let s='';
+  months.forEach((m,i)=>{
+    const x=i*slot+slot*.15,w=slot*.3,hi=m.inc/peak*(H-20),he=m.ex/peak*(H-20);
+    s+=`<rect x="${x}" y="${H-hi}" width="${w}" height="${hi}" fill="#2e7d32"/><rect x="${x+w+4}" y="${H-he}" width="${w}" height="${he}" fill="#b3261e"/><text x="${x+w}" y="${H+14}" text-anchor="middle" font-size="12" fill="var(--muted)">${m.l}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H+18}">${s}</svg>`;
+}
+
+// ============================================================ row builders
+function txRows(list){
+  return list.map(t=>{
+    const a=accOf(t.acc),inc=t.type==='INCOME';
+    return `<div class="row" onclick="edit('tx',${t.id})"><div class="grow"><b>${esc(t.cat)}</b><div class="muted">${new Date(t.date).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}${t.note?' · '+esc(t.note):''}${a?' · '+esc(a.name):''}</div></div><div class="${inc?'pos':'neg'}">${inc?'+':'−'}${fmt(t.amount,a?.currency||S.base,true)}</div></div>`;
+  }).join('');
+}
+function catBars(byCat){
+  const e=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);if(!e.length)return '';
+  const max=e[0][1];
+  return e.map(([k,v])=>`<div class="row" style="cursor:default"><div style="width:100px">${esc(k)}</div><div class="grow bar"><i style="width:${v/max*100}%"></i></div><div class="muted" style="width:72px;text-align:right">${fmt(v,S.base,true)}</div></div>`).join('');
+}
+function recRows(){
+  return S.recurring.map(r=>{
+    const a=accOf(r.acc),c=a?.currency||S.base;
+    const kind=r.holding?'SIP':(r.type==='INCOME'?'Income':'Expense')+' · '+r.cat;
+    return `<div class="row" onclick="edit('rec',${r.id})"><div class="grow"><b>${esc(r.name)}</b><div class="muted">${kind} · day ${r.day} · ${c}</div><div class="muted">Last posted: ${r.lastRun?ymLabel(r.lastRun):'never'} · Ends: ${r.endYm?ymLabel(r.endYm):'never'}</div><div style="font-size:13px" class="${r.active?'pos':'neg'}">${r.active?'Active':'Paused'}</div></div><div>${fmt(r.amount,c,true)}</div><button class="ghost" onclick="event.stopPropagation();toggleRec(${r.id})">${r.active?'Pause':'Resume'}</button></div>`;
+  }).join('')||'<div class="muted">No recurring rules yet.</div>';
+}
+function insightsHtml(){
+  const s=summary(),score=wellness(s),over=S.budgets.filter(b=>(s.byCat[b.cat]||0)>b.limit).map(b=>b.cat);
+  const lines=[];
+  if(!s.inc)lines.push('No income recorded this month yet.');
+  else if(s.rate<20)lines.push(`Savings rate is ${s.rate.toFixed(0)}%. Aim for at least 20%.`);
+  if(s.ex>0&&s.liquid/s.ex<6)lines.push(`Liquid cash covers ${(s.liquid/s.ex).toFixed(1)} months of expenses. Target 6.`);
+  if(s.assets>0&&s.liab/s.assets>.5)lines.push('Liabilities exceed half of your assets. Prioritise high-interest debt.');
+  if(over.length)lines.push('Over budget: '+over.join(', ')+'.');
+  if(!lines.length)lines.push('Everything looks healthy. Keep saving consistently.');
+  return `<div class="big">${score} / 100</div><div class="bar" style="margin:8px 0"><i style="width:${score}%"></i></div><div class="muted" style="margin-bottom:6px">Wellness: savings rate, emergency cover and debt load.</div>${lines.map(l=>`<div class="row" style="cursor:default">${esc(l)}</div>`).join('')}`;
+}
+
+// ============================================================ screens
+function renderHome(){
+  const s=summary(),tr=trend();
+  return `<div class="card"><div class="muted">Net worth (${S.base})</div><div class="big">${fmt(s.net)}</div><div class="muted">Assets ${fmt(s.assets,S.base,true)} · Liabilities ${fmt(s.liab,S.base,true)}</div></div>
+  <div class="grid2"><div class="card"><div class="muted">Income this month</div><div style="font-size:20px;font-weight:700">${fmt(s.inc,S.base,true)}</div></div><div class="card"><div class="muted">Expenses this month</div><div style="font-size:20px;font-weight:700">${fmt(s.ex,S.base,true)}</div></div></div>
+  <div class="card"><div class="muted">Savings rate</div><div style="font-size:20px;font-weight:700">${s.rate.toFixed(1)}%</div></div>
+  <div class="card"><b>Net worth trend (estimated)</b>${lineSvg(tr.net)}<br><b>Income vs expenses, last 6 months</b>${barSvg(tr.months)}<div class="muted"><span class="pos">■</span> Income &nbsp; <span class="neg">■</span> Expense</div></div>
+  <h3>Spending this month</h3><div class="card">${catBars(s.byCat)||'<div class="muted">No expenses yet.</div>'}</div>
+  <h3>Recent activity</h3><div class="card">${txRows([...S.tx].sort((a,b)=>b.date-a.date).slice(0,5))||'<div class="muted">No transactions yet.</div>'}</div>`;
+}
+function renderActivity(){
+  return `<h3>All transactions</h3><div class="muted" style="margin:0 4px 6px">Tap an entry to edit it.</div><div class="card">${txRows([...S.tx].sort((a,b)=>b.date-a.date))||'<div class="muted">No transactions yet. Tap + to add one.</div>'}</div>`;
+}
+function renderWealth(){
+  const acc=S.accounts.map(a=>{
+    const liab=KINDS[a.kind][1];
+    return `<div class="row" onclick="edit('acc',${a.id})"><div class="grow"><b>${esc(a.name)}</b><div class="muted">${KINDS[a.kind][0]} · ${a.currency}</div></div><div class="${liab?'neg':''}">${liab?'−':''}${fmt(a.balance,a.currency,true)}</div></div>`;
+  }).join('');
+  const hold=S.holdings.map(h=>{
+    const g=h.invested>0?(h.value-h.invested)/h.invested*100:0;
+    return `<div class="row" onclick="edit('hold',${h.id})"><div class="grow"><b>${esc(h.name)}</b><div class="muted">${HTYPES[h.type]} · SIP ${fmt(h.sip)}/mo · invested ${fmt(h.invested,S.base,true)}</div></div><div style="text-align:right"><b>${fmt(h.value,S.base,true)}</b><div class="muted">${g>=0?'+':''}${g.toFixed(1)}%</div></div></div>`;
+  }).join('');
+  const goals=S.goals.map(g=>{
+    const p=Math.min(g.saved/Math.max(g.target,1),1)*100;
+    return `<div class="card" onclick="edit('goal',${g.id})" style="cursor:pointer"><b>${esc(g.name)}</b><div class="bar" style="margin:8px 0"><i style="width:${p}%"></i></div><div class="muted">${fmt(g.saved,S.base,true)} of ${fmt(g.target,S.base,true)} · by ${new Date(g.deadline).toLocaleDateString('en-GB',{month:'short',year:'numeric'})}</div></div>`;
+  }).join('');
+  return `<h3>Accounts & liabilities</h3><div class="card">${acc||'<div class="muted">No accounts.</div>'}</div><button class="ghost" onclick="accForm()">+ Add account</button>
+  <h3>Investments (${S.base})</h3><div class="card">${hold||'<div class="muted">No investments.</div>'}</div><button class="ghost" onclick="holdForm()">+ Add investment</button>
+  <h3>Goals</h3>${goals||'<div class="card muted">No goals.</div>'}<button class="ghost" onclick="goalForm()">+ Add goal</button>`;
+}
+function renderBudgets(){
+  const s=summary();
+  const rows=S.budgets.map(b=>{
+    const sp=s.byCat[b.cat]||0,r=sp/b.limit;
+    return `<div class="card" onclick="edit('budget',${b.id})" style="cursor:pointer"><b>${esc(b.cat)}</b><div class="bar ${r>1?'over':''}" style="margin:8px 0"><i style="width:${Math.min(r,1)*100}%"></i></div><div class="muted">${fmt(sp,S.base,true)} of ${fmt(b.limit,S.base,true)} used${r>1?' — over budget':''}</div></div>`;
+  }).join('');
+  return `<h3>Monthly budgets</h3>${rows||'<div class="card muted">No budgets yet.</div>'}<button class="ghost" onclick="budForm()">+ Add budget</button>`;
+}
+function renderTools(){
+  return `<h3>Profile</h3><div class="card"><b>${esc(PROFILE.name)}</b> <span class="muted">(open)</span>
+    <div class="muted">Each profile has its own passphrase and its own encrypted data.</div>
+    <div class="grid2"><button class="ghost" onclick="lockNow()">Lock & switch profile</button><button class="ghost" onclick="lockView='create';lockNow()">New profile</button></div>
+    <button class="danger" onclick="deleteProfile()">Delete this profile</button></div>
+  <h3>Recurring & SIP</h3><div class="card">${recRows()}</div><button class="ghost" onclick="recForm()">+ Add rule</button>
+  <h3>Calculators</h3><div class="card">
+    <b>SIP</b>
+    <div class="grid2"><div><label>Monthly</label><input id="c_sip_m" value="10000" inputmode="decimal" oninput="calcAll()"></div><div><label>Return % p.a.</label><input id="c_sip_r" value="12" inputmode="decimal" oninput="calcAll()"></div></div>
+    <label>Years</label><input id="c_sip_y" value="10" inputmode="decimal" oninput="calcAll()"><div class="muted" id="c_sip_out"></div>
+    <hr><b>Loan EMI</b>
+    <label>Loan amount</label><input id="c_loan_p" value="2400000" inputmode="decimal" oninput="calcAll()">
+    <div class="grid2"><div><label>Rate % p.a.</label><input id="c_loan_r" value="8.5" inputmode="decimal" oninput="calcAll()"></div><div><label>Years</label><input id="c_loan_y" value="20" inputmode="decimal" oninput="calcAll()"></div></div>
+    <div class="muted" id="c_loan_out"></div>
+    <hr><b>Fixed deposit (quarterly compounding)</b>
+    <div class="grid2"><div><label>Deposit</label><input id="c_fd_p" value="100000" inputmode="decimal" oninput="calcAll()"></div><div><label>Rate % p.a.</label><input id="c_fd_r" value="7" inputmode="decimal" oninput="calcAll()"></div></div>
+    <label>Years</label><input id="c_fd_y" value="5" inputmode="decimal" oninput="calcAll()"><div class="muted" id="c_fd_out"></div>
+  </div>
+  <h3>Insights</h3><div class="card">${insightsHtml()}</div>
+  <h3>Currency</h3><div class="card">
+    <label>Base currency (totals and charts)</label>
+    <select id="cur_base">${CUR.map(c=>`<option ${c===S.base?'selected':''}>${c}</option>`).join('')}</select>
+    ${CUR.filter(c=>c!==S.base).map(c=>`<label>1 ${c} = ? ${S.base}</label><input id="r_${c}" value="${S.rates[c]||''}" inputmode="decimal">`).join('')}
+    <div class="muted" style="margin-top:8px">Enter exchange rates yourself. Nothing is fetched online.</div>
+    <button class="btn" style="margin-top:10px" onclick="saveCurrency()">Save currency</button>
+  </div>
+  <h3>Backup, restore & reports</h3><div class="card">
+    <div class="grid2"><button class="ghost" onclick="backupForm()">Encrypted backup</button><button class="ghost" onclick="reportPdf()">PDF report</button></div>
+    <div class="grid2" style="margin-top:8px"><button class="ghost" onclick="exportCsv()">Export CSV</button><span></span></div>
+    <label>Restore from an encrypted backup (creates a new profile)</label>
+    <input type="file" accept="application/json,.json" onchange="restoreFile(this)">
+    <div class="muted" style="margin-top:10px">Backups are encrypted with the passphrase you choose and open on any device. Keep that passphrase safe: it cannot be recovered. CSV exports are not encrypted.</div>
+  </div>
+  <h3>Security</h3><div class="card muted">Data is encrypted in this browser with AES-256-GCM. The key is derived from your passphrase with PBKDF2 (${PBKDF2_ITER.toLocaleString('en')} iterations) and is kept only in memory while unlocked. The app locks after 2 minutes in the background.</div>`;
+}
+// Editable account rows: liabSide=false lists assets, true lists liabilities.
+function accRows(liabSide){
+  return S.accounts.filter(a=>!!KINDS[a.kind][1]===liabSide).map(a=>{
+    const liab=KINDS[a.kind][1];
+    return `<div class="row" onclick="edit('acc',${a.id})"><div class="grow"><b>${esc(a.name)}</b><div class="muted">${KINDS[a.kind][0]} · ${a.currency} · tap to edit</div></div><div class="${liab?'neg':''}">${liab?'−':''}${fmt(a.balance,a.currency,true)}</div></div>`;
+  }).join('');
+}
+function renderAssets(){
+  const s=summary();
+  const hold=S.holdings.map(h=>{const g=h.invested>0?(h.value-h.invested)/h.invested*100:0;return `<div class="row" onclick="edit('hold',${h.id})"><div class="grow"><b>${esc(h.name)}</b><div class="muted">${HTYPES[h.type]} · SIP ${fmt(h.sip)}/mo · invested ${fmt(h.invested,S.base,true)}</div></div><div style="text-align:right"><b>${fmt(h.value,S.base,true)}</b><div class="muted">${g>=0?'+':''}${g.toFixed(1)}%</div></div></div>`;}).join('');
+  const goals=S.goals.map(g=>{const p=Math.min(g.saved/Math.max(g.target,1),1)*100;return `<div class="card" onclick="edit('goal',${g.id})" style="cursor:pointer"><b>${esc(g.name)}</b><div class="bar" style="margin:8px 0"><i style="width:${p}%"></i></div><div class="muted">${fmt(g.saved,S.base,true)} of ${fmt(g.target,S.base,true)}</div></div>`;}).join('');
+  return `<div class="card"><div class="muted">Total assets (${S.base})</div><div class="big">${fmt(s.assets)}</div></div>
+  <h3>Bank, wallet, cash, property and gold</h3><div class="card">${accRows(false)||'<div class="muted">No asset accounts yet.</div>'}</div><button class="ghost" onclick="accForm()">+ Add asset account</button>
+  <h3>Investments (${S.base})</h3><div class="card">${hold||'<div class="muted">No investments.</div>'}</div><button class="ghost" onclick="holdForm()">+ Add investment</button>
+  <h3>Goals</h3>${goals||'<div class="card muted">No goals.</div>'}<button class="ghost" onclick="goalForm()">+ Add goal</button>`;
+}
+function renderLiabilities(){
+  const s=summary();
+  return `<div class="card"><div class="muted">Total liabilities (${S.base})</div><div class="big neg">${fmt(s.liab)}</div></div>
+  <h3>Credit cards and loans</h3><div class="card">${accRows(true)||'<div class="muted">No liabilities.</div>'}</div><button class="ghost" onclick="accForm()">+ Add liability account</button>`;
+}
+const SCREENS={home:renderHome,activity:renderActivity,assets:renderAssets,liabilities:renderLiabilities,budgets:renderBudgets,tools:renderTools};
+
+// ============================================================ lock screen and profiles
+function renderLock(){
+  const list=profiles(),legacy=!!localStorage.getItem(LEGACY_KEY);
+  const restore=`<div class="card"><b>Restore from backup</b><div class="muted">Pick an encrypted WealthOS backup file. You will be asked for its passphrase.</div><input type="file" accept="application/json,.json" onchange="restoreFile(this)"></div>`;
+  if(lockView==='create'||!list.length){
+    return `<div class="card"><b>${list.length?'New profile':'Create your first profile'}</b>
+      ${legacy&&!list.length?'<div class="muted" style="margin-top:6px">Your earlier unencrypted data will be moved into this profile and the old copy removed.</div>':''}
+      ${inp('Profile name','c_name','Personal')}
+      ${inp('Passphrase (8+ characters; it cannot be recovered)','c_pass','',false,'password')}
+      ${inp('Confirm passphrase','c_pass2','',false,'password')}
+      <div class="actions"><div>${list.length?'<button class="ghost" onclick="setLockView(\'login\')">Back</button>':''}</div><button class="btn" onclick="createFromForm()">Create</button></div></div>${restore}`;
+  }
+  const active=localStorage.getItem('wos.active');
+  return `<div class="big" style="margin:6px 0">Unlock WealthOS</div>
+    <div class="card"><label>Profile</label><select id="l_profile">${list.map(p=>`<option value="${p.id}" ${p.id===active?'selected':''}>${esc(p.name)}</option>`).join('')}</select>
+    ${inp('Passphrase','l_pass','',false,'password')}
+    <div class="actions"><button class="ghost" onclick="setLockView('create')">New profile</button><button class="btn" onclick="unlockFromForm()">Unlock</button></div>
+    <div id="l_msg" class="muted" style="margin-top:8px"></div></div>${restore}`;
+}
+function setLockView(v){lockView=v;render()}
+function lockNow(){KEY=null;PROFILE=null;S=null;closeModal();render()}
+
+async function unlockFromForm(){
+  const msg=document.getElementById('l_msg');
+  msg.textContent='Unlocking…';
+  try{await unlock(val('l_profile'),val('l_pass'))}
+  catch(e){msg.textContent=e.message||'Could not unlock.'}
+}
+async function unlock(id,pass){
+  const p=profiles().find(x=>x.id===id);
+  if(!p)throw new Error('Profile not found.');
+  const key=await deriveKey(pass,unb64(p.salt));
+  const box=JSON.parse(localStorage.getItem('wos.data.'+id)||'null');
+  let data;
+  try{data=JSON.parse(await decrypt(key,box))}catch(e){throw new Error('Wrong passphrase.')}
+  KEY=key;PROFILE=p;S=data;
+  localStorage.setItem('wos.active',id);
+  lockView='login';tab='home';
+  runRecurring();render();
+}
+
+async function addProfile(name,pass,data){
+  const id='p'+Date.now().toString(36);
+  const salt=crypto.getRandomValues(new Uint8Array(16));
+  const key=await deriveKey(pass,salt);
+  const p={id,name,salt:b64(salt)};
+  saveProfiles([...profiles(),p]);
+  KEY=key;PROFILE=p;S=data;
+  localStorage.setItem('wos.active',id);
+  save();await chain;
+  lockView='login';tab='home';
+  runRecurring();render();
+}
+
+async function createFromForm(){
+  const name=val('c_name').trim()||'Personal',p1=val('c_pass'),p2=val('c_pass2');
+  if(p1.length<8)return alert('Use at least 8 characters.');
+  if(p1!==p2)return alert('Passphrases do not match.');
+  const legacy=localStorage.getItem(LEGACY_KEY),first=!profiles().length;
+  let data=first?(legacy?JSON.parse(legacy):seedData()):emptyData();
+  try{await addProfile(name,p1,data)}
+  catch(e){return alert('Could not create the profile: '+e.message)}
+  if(legacy&&first)localStorage.removeItem(LEGACY_KEY);
+}
+
+function deleteProfile(){
+  const p=PROFILE;
+  openModal('Delete profile?',
+    `<div class="muted">This permanently deletes "${esc(p.name)}" and all its data on this device. Type its name to confirm.</div>${inp('Profile name','f_name')}`,
+    ()=>{
+      if(val('f_name')!==p.name)return alert('The name does not match.');
+      localStorage.removeItem('wos.data.'+p.id);
+      saveProfiles(profiles().filter(x=>x.id!==p.id));
+      localStorage.removeItem('wos.active');
+      lockNow();
+    },null,'Delete permanently');
+}
+
+// ============================================================ backup and restore
+function askPassphrase(title,cb){
+  openModal(title,`<label>Passphrase</label><input id="f_pass" type="password" autocomplete="off">`,
+    ()=>{const p=val('f_pass');closeModal();if(p)cb(p)},null,'Continue');
+}
+function backupForm(){
+  openModal('Encrypted backup',
+    `<div class="muted">Choose a passphrase for this backup file. You need it to restore. It can differ from the profile passphrase.</div>
+     ${inp('Backup passphrase (8+ characters)','f_p1','',false,'password')}${inp('Confirm passphrase','f_p2','',false,'password')}`,
+    async()=>{
+      const a=val('f_p1'),b=val('f_p2');
+      if(a.length<8)return alert('Use at least 8 characters.');
+      if(a!==b)return alert('Passphrases do not match.');
+      closeModal();
+      await exportBackup(a);
+    },null,'Create backup');
+}
+async function exportBackup(pass){
+  const salt=crypto.getRandomValues(new Uint8Array(16));
+  const key=await deriveKey(pass,salt);
+  const box=await encrypt(key,JSON.stringify(S));
+  const file={format:'wealthos-backup',v:2,name:PROFILE.name,salt:b64(salt),iv:box.iv,ct:box.ct,created:new Date().toISOString()};
+  download(`wealthos-backup-${new Date().toISOString().slice(0,10)}.json`,JSON.stringify(file,null,2),'application/json');
+}
+function restoreFile(input){
+  const f=input.files[0];if(!f)return;
+  input.value='';
+  f.text().then(t=>{
+    const b=JSON.parse(t);
+    if(b.format!=='wealthos-backup')throw new Error('not a backup');
+    askPassphrase('Backup passphrase',async pass=>{
+      try{
+        const key=await deriveKey(pass,unb64(b.salt));
+        const data=JSON.parse(await decrypt(key,{iv:b.iv,ct:b.ct}));
+        const existing=profiles().map(p=>p.name);
+        let name=(b.name||'Restored')+' (restored)';
+        if(existing.includes(name))name+=' '+new Date().toLocaleTimeString('en-GB');
+        await addProfile(name,pass,data);
+        alert('Backup restored into a new profile.');
+      }catch(e){alert('Could not restore: wrong passphrase or damaged file.')}
+    });
+  }).catch(()=>alert('That file is not a WealthOS backup.'));
+}
+
+// ============================================================ PDF report (generated in the browser)
+function pdfClean(s){
+  return String(s).replace(/₹/g,'Rs ').replace(/[·•|]/g,'|').replace(/[−–—]/g,'-')
+    .replace(/[^\x20-\x7e]/g,'').replace(/[\\()]/g,m=>'\\'+m);
+}
+function makePdf(lines){
+  const pages=[];let cur=[],y=790;
+  lines.forEach(l=>{
+    const h=(l.size||11)+6;
+    if(y-h<50){pages.push(cur);cur=[];y=790}
+    cur.push({...l,y});y-=h;
+  });
+  pages.push(cur);
+  const objs=[];
+  objs[1]='<< /Type /Catalog /Pages 2 0 R >>';
+  const first=5;
+  objs[2]=`<< /Type /Pages /Kids [${pages.map((_,i)=>(first+2*i)+' 0 R').join(' ')}] /Count ${pages.length} >>`;
+  objs[3]='<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
+  objs[4]='<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>';
+  pages.forEach((pg,i)=>{
+    const content=pg.map(l=>`BT /F${l.bold?2:1} ${l.size||11} Tf 40 ${l.y} Td (${pdfClean(l.t).slice(0,100)}) Tj ET`).join('\n');
+    objs[first+2*i]=`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${first+2*i+1} 0 R >>`;
+    objs[first+2*i+1]=`<< /Length ${content.length} >>\nstream\n${content}\nendstream`;
+  });
+  let out='%PDF-1.4\n';const off=[];
+  for(let i=1;i<objs.length;i++){off[i]=out.length;out+=`${i} 0 obj\n${objs[i]}\nendobj\n`}
+  const xref=out.length;
+  out+=`xref\n0 ${objs.length}\n0000000000 65535 f \n`;
+  for(let i=1;i<objs.length;i++)out+=String(off[i]).padStart(10,'0')+' 00000 n \n';
+  out+=`trailer\n<< /Size ${objs.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return new Blob([out],{type:'application/pdf'});
+}
+function reportPdf(){
+  const s=summary(),L=[];
+  const title=t=>L.push({t,size:13,bold:true});
+  const line=t=>L.push({t,size:10});
+  L.push({t:'WealthOS Financial Report',size:20,bold:true});
+  line('Generated '+new Date().toLocaleString('en-GB')+'   Profile: '+PROFILE.name);
+  L.push({t:' ',size:8});
+  title('Summary');
+  line(`Net worth: ${fmt(s.net)}`);
+  line(`Assets: ${fmt(s.assets)}   Liabilities: ${fmt(s.liab)}`);
+  line(`This month: income ${fmt(s.inc)}, expenses ${fmt(s.ex)}, savings rate ${s.rate.toFixed(1)}%`);
+  line(`Financial wellness score: ${wellness(s)} / 100`);
+  L.push({t:' ',size:8});
+  title('Accounts and liabilities');
+  S.accounts.forEach(a=>line(`${a.name} (${KINDS[a.kind][0]}, ${a.currency}): ${KINDS[a.kind][1]?'-':''}${fmt(a.balance,a.currency)}`));
+  L.push({t:' ',size:8});
+  title('Investments');
+  S.holdings.forEach(h=>{const g=h.invested>0?(h.value-h.invested)/h.invested*100:0;line(`${h.name}: invested ${fmt(h.invested)}, value ${fmt(h.value)}, ${g>=0?'+':''}${g.toFixed(1)}%, SIP ${fmt(h.sip)}/mo`)});
+  L.push({t:' ',size:8});
+  title('Goals');
+  S.goals.forEach(g=>line(`${g.name}: ${fmt(g.saved)} of ${fmt(g.target)} (${(g.saved/Math.max(g.target,1)*100).toFixed(0)}%)`));
+  L.push({t:' ',size:8});
+  title('Budgets this month');
+  S.budgets.forEach(b=>line(`${b.cat}: ${fmt(s.byCat[b.cat]||0)} of ${fmt(b.limit)}`));
+  L.push({t:' ',size:8});
+  title('Spending by category this month');
+  Object.entries(s.byCat).sort((a,b)=>b[1]-a[1]).forEach(([k,v])=>line(`${k}: ${fmt(v)}`));
+  L.push({t:' ',size:8});
+  title('Recent transactions');
+  [...S.tx].sort((a,b)=>b.date-a.date).slice(0,30).forEach(t=>line(`${new Date(t.date).toLocaleDateString('en-GB')}  ${t.type==='INCOME'?'+':'-'}${fmt(t.amount,accOf(t.acc)?.currency||S.base)}  ${t.cat}${t.note?' - '+t.note:''}`));
+  download('WealthOS-report.pdf',makePdf(L),'application/pdf');
+}
+
+// ============================================================ CSV and downloads
+function download(name,data,type){
+  const blob=data instanceof Blob?data:new Blob([data],{type});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=name;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+function exportCsv(){
+  if(!confirm('CSV files are NOT encrypted. Continue?'))return;
+  const rows=[['date','type','category','amount','account','note']].concat(
+    [...S.tx].sort((a,b)=>a.date-b.date).map(t=>[new Date(t.date).toISOString().slice(0,10),t.type,t.cat,t.amount.toFixed(2),accOf(t.acc)?.name||'',t.note]));
+  download('wealthos-transactions.csv',rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'),'text/csv');
+}
+
+// ============================================================ forms: modal
+let modal=null;
+function openModal(title,body,onSave,onDelete,saveLabel='Save'){modal={title,body,onSave,onDelete,saveLabel};renderModal()}
+function closeModal(){modal=null;document.getElementById('modal').innerHTML=''}
+function renderModal(){
+  document.getElementById('modal').innerHTML=`<div class="modal" onclick="if(event.target===this)closeModal()"><div class="sheet"><h3 style="margin-top:0">${esc(modal.title)}</h3>${modal.body}<div class="actions"><div>${modal.onDelete?'<button class="danger" onclick="modalDelete()">Delete</button>':''}</div><div><button class="ghost" onclick="closeModal()">Cancel</button> <button class="btn" onclick="modal.onSave()">${esc(modal.saveLabel)}</button></div></div></div></div>`;
+}
+function modalDelete(){if(confirm('Delete this item? This cannot be undone.'))modal.onDelete()}
+function inp(label,id,v='',num=false,type='text'){
+  return `<label>${esc(label)}</label><input id="${id}" type="${type}" value="${esc(v)}" ${num?'inputmode="decimal"':''} autocomplete="off">`;
+}
+function chips(id,opts,sel,hook=''){
+  return `<input type="hidden" id="${id}" value="${esc(sel)}"><div class="chips">${opts.map(o=>`<span class="chip ${o.v===sel?'on':''}" data-id="${id}" data-v="${esc(o.v)}" ${hook?`data-hook="${hook}"`:''} onclick="pick(this)">${esc(o.l)}</span>`).join('')}</div>`;
+}
+function pick(el){
+  document.getElementById(el.dataset.id).value=el.dataset.v;
+  el.parentNode.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c===el));
+  if(el.dataset.hook)window[el.dataset.hook]();
+}
+const FORM={};
+function edit(kind,id){FORM[kind](S[LIST[kind]].find(x=>x.id===id))}
+
+// ---- transactions
+FORM.tx=t=>txForm(t);
+function txForm(t){
+  const isNew=!t;
+  t=t||{type:'EXPENSE',cat:EXP[0],amount:'',note:'',acc:S.accounts[0]?.id};
+  openModal(isNew?'New transaction':'Edit transaction',
+    chips('f_type',[{v:'EXPENSE',l:'Expense'},{v:'INCOME',l:'Income'}],t.type,'txTypeChanged')+
+    inp('Amount','f_amount',t.amount,true)+
+    `<label>Category</label><select id="f_cat">${(t.type==='INCOME'?INC:EXP).map(c=>`<option ${c===t.cat?'selected':''}>${esc(c)}</option>`).join('')}</select>`+
+    `<label>Account</label><select id="f_acc">${S.accounts.map(a=>`<option value="${a.id}" ${a.id===t.acc?'selected':''}>${esc(a.name)} (${a.currency})</option>`).join('')}</select>`+
+    inp('Note (optional)','f_note',t.note),
+    ()=>saveTx(isNew?null:t.id),
+    isNew?null:()=>deleteTx(t.id));
+}
+function txTypeChanged(){
+  const t=val('f_type');
+  document.getElementById('f_cat').innerHTML=(t==='INCOME'?INC:EXP).map(c=>`<option>${esc(c)}</option>`).join('');
+}
+function saveTx(id){
+  const amt=parseFloat(val('f_amount')),acc=accOf(+val('f_acc'));
+  if(!(amt>0)||!acc)return alert('Enter an amount and choose an account.');
+  const type=val('f_type'),cat=val('f_cat'),note=val('f_note').trim();
+  if(id){
+    const old=S.tx.find(x=>x.id===id);
+    applyTx(old,true);
+    Object.assign(old,{type,cat,amount:amt,acc:acc.id,note});
+    applyTx(old);
+  }else{
+    const t={id:nid(),type,cat,amount:amt,acc:acc.id,note,date:Date.now()};
+    S.tx.push(t);applyTx(t);
+  }
+  save();closeModal();render();
+}
+function deleteTx(id){
+  const t=S.tx.find(x=>x.id===id);
+  applyTx(t,true);
+  S.tx=S.tx.filter(x=>x.id!==id);
+  save();closeModal();render();
+}
+
+// ---- accounts
+FORM.acc=a=>accForm(a);
+function accForm(a){
+  const isNew=!a;
+  a=a||{name:'',kind:'BANK',currency:S.base,balance:''};
+  openModal(isNew?'New account':'Edit account',
+    inp('Name','f_name',a.name)+
+    `<label>Type</label><select id="f_kind">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}" ${k===a.kind?'selected':''}>${v[0]}</option>`).join('')}</select>`+
+    `<label>Currency</label><select id="f_cur">${CUR.map(c=>`<option ${c===a.currency?'selected':''}>${c}</option>`).join('')}</select>`+
+    inp('Balance (or amount owed for loans and cards)','f_bal',a.balance,true),
+    ()=>saveAcc(isNew?null:a.id),
+    isNew?null:()=>{S.accounts=S.accounts.filter(x=>x.id!==a.id);save();closeModal();render()});
+}
+function saveAcc(id){
+  const name=val('f_name').trim();
+  if(!name)return alert('Enter a name.');
+  const d={name,kind:val('f_kind'),currency:val('f_cur'),balance:parseFloat(val('f_bal'))||0};
+  if(id)Object.assign(accOf(id),d);else S.accounts.push({id:nid(),...d});
+  save();closeModal();render();
+}
+
+// ---- investments
+FORM.hold=h=>holdForm(h);
+function holdForm(h){
+  const isNew=!h;
+  h=h||{name:'',type:'MUTUAL_FUND',invested:'',value:'',sip:''};
+  openModal(isNew?'New investment':'Edit investment',
+    inp('Name','f_name',h.name)+
+    `<label>Type</label><select id="f_type">${Object.entries(HTYPES).map(([k,v])=>`<option value="${k}" ${k===h.type?'selected':''}>${v}</option>`).join('')}</select>`+
+    inp(`Amount invested (${S.base})`,'f_inv',h.invested,true)+
+    inp(`Current value (${S.base}), update after each revaluation`,'f_val',h.value,true)+
+    inp(`Monthly SIP (${S.base})`,'f_sip',h.sip,true),
+    ()=>saveHold(isNew?null:h.id),
+    isNew?null:()=>{S.holdings=S.holdings.filter(x=>x.id!==h.id);save();closeModal();render()});
+}
+function saveHold(id){
+  const name=val('f_name').trim();
+  if(!name)return alert('Enter a name.');
+  const inv=parseFloat(val('f_inv'))||0;
+  const d={name,type:val('f_type'),invested:inv,value:parseFloat(val('f_val'))||inv,sip:parseFloat(val('f_sip'))||0};
+  if(id)Object.assign(S.holdings.find(h=>h.id===id),d);else S.holdings.push({id:nid(),...d});
+  save();closeModal();render();
+}
+
+// ---- goals
+FORM.goal=g=>goalForm(g);
+function goalForm(g){
+  const isNew=!g;
+  g=g||{name:'',target:'',saved:''};
+  openModal(isNew?'New goal':'Edit goal',
+    inp('Goal name','f_name',g.name)+inp(`Target (${S.base})`,'f_t',g.target,true)+inp(`Saved so far (${S.base})`,'f_s',g.saved,true),
+    ()=>saveGoal(isNew?null:g.id),
+    isNew?null:()=>{S.goals=S.goals.filter(x=>x.id!==g.id);save();closeModal();render()});
+}
+function saveGoal(id){
+  const name=val('f_name').trim(),t=parseFloat(val('f_t'));
+  if(!name||!(t>0))return alert('Enter a name and a target.');
+  const d={name,target:t,saved:parseFloat(val('f_s'))||0};
+  if(id)Object.assign(S.goals.find(g=>g.id===id),d);
+  else S.goals.push({id:nid(),deadline:Date.now()+365*DAY,...d});
+  save();closeModal();render();
+}
+
+// ---- budgets (one per category)
+FORM.budget=b=>budForm(b);
+function budForm(b){
+  const isNew=!b;
+  b=b||{cat:EXP[0],limit:''};
+  openModal(isNew?'New budget':'Edit budget',
+    `<label>Category</label><select id="f_cat" ${isNew?'':'disabled'}>${EXP.map(c=>`<option ${c===b.cat?'selected':''}>${c}</option>`).join('')}</select>`+
+    inp(`Monthly limit (${S.base})`,'f_lim',b.limit,true),
+    ()=>saveBud(b.cat,isNew),
+    isNew?null:()=>{S.budgets=S.budgets.filter(x=>x.cat!==b.cat);save();closeModal();render()});
+}
+function saveBud(cat,isNew){
+  const lim=parseFloat(val('f_lim'));
+  if(!(lim>0))return alert('Enter a limit.');
+  const c=isNew?val('f_cat'):cat;
+  const ex=S.budgets.find(x=>x.cat===c);
+  if(ex)ex.limit=lim;else S.budgets.push({id:nid(),cat:c,limit:lim});
+  save();closeModal();render();
+}
+
+// ---- recurring rules
+FORM.rec=r=>recForm(r);
+function recCatHtml(mode,cat,holdSel){
+  if(mode==='SIP'){
+    return `<label>Holding</label><select id="f_hold">${S.holdings.map(h=>`<option value="${h.id}" ${h.id===holdSel?'selected':''}>${esc(h.name)}</option>`).join('')}</select>`;
+  }
+  return `<label>Category</label><select id="f_cat">${(mode==='INCOME'?INC:EXP).map(c=>`<option ${c===cat?'selected':''}>${esc(c)}</option>`).join('')}</select>`;
+}
+function recModeChanged(){document.getElementById('rec_cat').innerHTML=recCatHtml(val('f_mode'),'',null)}
+function recForm(r){
+  const isNew=!r;
+  r=r||{name:'',type:'EXPENSE',cat:EXP[0],amount:'',day:1,acc:S.accounts[0]?.id,holding:0,endYm:0};
+  const mode=r.holding?'SIP':(r.type==='INCOME'?'INCOME':'EXPENSE');
+  const remaining=r.endYm?idx(r.endYm)-nowIdx()+1:'';
+  openModal(isNew?'New recurring entry':'Edit recurring entry',
+    chips('f_mode',[{v:'EXPENSE',l:'Expense'},{v:'INCOME',l:'Income'},{v:'SIP',l:'SIP'}],mode,'recModeChanged')+
+    inp('Name','f_name',r.name)+
+    `<div id="rec_cat">${recCatHtml(mode,r.cat,r.holding)}</div>`+
+    inp('Amount','f_amount',r.amount,true)+
+    inp('Day of month (1–28)','f_day',r.day,true)+
+    `<label>Paid from</label><select id="f_acc">${S.accounts.map(a=>`<option value="${a.id}" ${a.id===r.acc?'selected':''}>${esc(a.name)} (${a.currency})</option>`).join('')}</select>`+
+    inp('Stop after how many more payments (blank = never)','f_rem',remaining,true),
+    ()=>saveRec(isNew?null:r.id),
+    isNew?null:()=>{S.recurring=S.recurring.filter(x=>x.id!==r.id);save();closeModal();render()});
+}
+function saveRec(id){
+  const name=val('f_name').trim(),mode=val('f_mode'),amt=parseFloat(val('f_amount')),day=parseInt(val('f_day')),acc=accOf(+val('f_acc')),n=parseInt(val('f_rem'));
+  if(!name||!(amt>0)||!(day>=1&&day<=28)||!acc)return alert('Check the name, amount, day (1–28) and account.');
+  if(mode==='SIP'&&!S.holdings.length)return alert('Add an investment first.');
+  const cur=nowIdx();
+  const d={name,acc:acc.id,type:mode==='INCOME'?'INCOME':'EXPENSE',cat:mode==='SIP'?'Investments':val('f_cat'),amount:amt,day,
+    holding:mode==='SIP'?+val('f_hold'):0,endYm:n>0?idxYm(cur+n-1):0};
+  if(id){
+    Object.assign(S.recurring.find(x=>x.id===id),d);
+  }else{
+    const now=new Date();
+    S.recurring.push({id:nid(),...d,active:true,lastRun:now.getDate()>=day?idxYm(cur):0});
+  }
+  save();runRecurring();closeModal();render();
+}
+function toggleRec(id){const r=S.recurring.find(x=>x.id===id);r.active=!r.active;save();render()}
+
+// ---- settings
+function saveCurrency(){
+  const base=val('cur_base'),rates={};
+  CUR.forEach(c=>{if(c!==base){const v=parseFloat(val('r_'+c));if(v>0)rates[c]=v}});
+  S.base=base;S.rates=rates;save();render();
+}
+
+// ---- calculators
+function calcAll(){
+  const v=id=>parseFloat(document.getElementById(id)?.value)||0;
+  const m=v('c_sip_m'),r=v('c_sip_r')/1200,n=v('c_sip_y')*12;
+  const sipVal=r?m*((Math.pow(1+r,n)-1)/r)*(1+r):m*n,inv=m*n;
+  setText('c_sip_out',`Invested ${fmt(inv,S.base,true)} · Value ${fmt(sipVal,S.base,true)} · Gain ${fmt(sipVal-inv,S.base,true)}`);
+  const P=v('c_loan_p'),lr=v('c_loan_r')/1200,ln=v('c_loan_y')*12;
+  const emi=ln<=0||P<=0?0:(lr?P*lr*Math.pow(1+lr,ln)/(Math.pow(1+lr,ln)-1):P/ln);
+  setText('c_loan_out',`EMI ${fmt(emi,S.base)} per month · Total interest ${fmt(emi*ln-P,S.base,true)}`);
+  const D=v('c_fd_p'),fr=v('c_fd_r'),fy=v('c_fd_y');
+  setText('c_fd_out',`Maturity ${fmt(D*Math.pow(1+fr/400,4*fy),S.base,true)}`);
+}
+
+// ============================================================ navigation and rendering
+function render(){
+  document.body.toggleAttribute('data-locked', !KEY);
+  const main=document.getElementById('main');
+  if(!KEY){main.innerHTML=renderLock();return}
+  main.innerHTML=SCREENS[tab]();
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
+  if(tab==='tools')calcAll();
+}
+function go(t){tab=t;render();window.scrollTo(0,0)}
+
+// Locks after 2 minutes in the background; checks recurring rules when the app returns.
+let hiddenAt=0;
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){hiddenAt=Date.now();return}
+  if(KEY&&Date.now()-hiddenAt>120000){lockNow();return}
+  if(KEY&&runRecurring())render();
+});
+
+// ============================================================ start
+if(!(window.crypto&&crypto.subtle)){
+  document.getElementById('main').innerHTML='<div class="card">This browser cannot encrypt data here. Open wealthos.html over https or localhost in a current browser.</div>';
+}else{
+  render();
+}
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+}
+</script>
+</body>
+</html>
